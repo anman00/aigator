@@ -1,7 +1,7 @@
 # AiGator
 
 ## Project Description
-AiGator is an intelligent query routing system designed to streamline user queries to the most appropriate large language model (LLM). Using an intent detection mechanism, AiGator automatically identifies the domain of a user query and routes it to the corresponding pre-mapped LLM. If no match is found, the query is routed to a default fallback model, ensuring seamless query resolution.
+AiGator is an intelligent query routing system designed to streamline user queries to the most appropriate large language model (LLM). Using an intent detection mechanism, AiGator automatically identifies the domain of a user query and routes it to the corresponding the most apropriate LLM to handle that query. If no match is found, the query is routed to a default fallback model, ensuring seamless query resolution.
 
 ---
 
@@ -57,11 +57,12 @@ AiGator is an intelligent query routing system designed to streamline user queri
 ---
 
 ## Credits
-- **Author**: [Your Name or GitHub Handle](https://github.com/your-username)
-- **Contributors**: Special thanks to the teams behind [OpenRouter](https://openrouter.ai/) and the LLM providers.
+- AiGator Team
+- Contributor: (https://github.com/navedakhtarr)
 
 ---
 
 ## License
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT). Feel free to use, modify, and distribute this project as per the terms of the license.
+This project is under the AiGator, please contact the developers for any contributions and development
+
 
