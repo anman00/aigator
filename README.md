@@ -37,7 +37,7 @@ AiGator is an intelligent query routing system designed to streamline user queri
 ### Running the Application
 1. Launch the Streamlit app:
     ```bash
-    streamlit run main.py
+    streamlit run app.py
     ```
 2. Open the provided URL in your web browser to interact with the app.
 
