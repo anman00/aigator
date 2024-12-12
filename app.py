@@ -104,8 +104,32 @@ class ChatHistory:
             max_history (int): Maximum number of chat entries to store
         """
         # Initialize session state for chat history if not exists
+        # if 'chat_history' not in st.session_state:
+        #     st.session_state.chat_history = []
+        
         if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
+            st.session_state.chat_history = [
+                {
+                    'query': '(Example) What are the top restaurants in New York?',
+                    'intent': 'food',
+                    'llm': 'mistralai/mistral-7b-instruct:free',
+                    'timestamp': time.time() - 3600  # 1 hour ago
+                },
+                {
+                    'query': '(Example) Explain quantum computing basics',
+                    'intent': 'technology',
+                    'llm': 'meta-llama/llama-3.1-405b-instruct:free',
+                    'timestamp': time.time() - 7200  # 2 hours ago
+                },
+                {
+                    'query': '(Example) Best practices for Python programming',
+                    'intent': 'programming',
+                    'llm': 'huggingfaceh4/zephyr-7b-beta:free',
+                    'timestamp': time.time() - 14400  # 4 hours ago
+                }
+            ]
+        
+        self.max_history = max_history
         
         self.max_history = max_history
     
@@ -138,11 +162,54 @@ class ChatHistory:
         """
         Display chat history in the sidebar
         """
+        unique_models = sorted(set(list(LLM_MAPPING.values()) + list(SECONDARY_LLM_MAPPING.values())))
+    
+        st.sidebar.selectbox(
+            "Explore Assistants",
+            # sorted(list(LLM_MAPPING.keys())),
+            unique_models,
+        )
         st.sidebar.header("📜 Chat History")
         
         if not st.session_state.chat_history:
             st.sidebar.write("No chat history yet.")
-            return
+            
+            for _ in range(25):
+                st.sidebar.markdown("")
+            
+            st.sidebar.markdown("""
+                <style>
+                .button-border{
+                    border: 1px solid #ccc;
+                    border-radius: 5px;
+                    padding: 5px 10px;
+                    background-color: transparent;
+                    color: white;
+                }
+                .sidebar-buttons-wrapper{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    grid-template-rows: auto auto;
+                    gap: 10px;
+                }
+                .top {
+                    grid-column: span 2;
+                    text-align: center;
+                }
+
+                .bottom-left, .bottom-right {
+                    text-align: center;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            st.sidebar.markdown("""<div class='sidebar-buttons-wrapper'>
+                    <button class='top button-border'>🚪 Sign In</button>
+                    <button class='bottom-left button-border'>🔑 Add API</button>
+                    <button class='bottom-right button-border'>⚙️ Settings</button>
+                </div>""",
+                unsafe_allow_html=True
+            )
         
         for idx, entry in enumerate(st.session_state.chat_history, 1):
             # Truncate long queries for display
@@ -153,7 +220,54 @@ class ChatHistory:
                 st.write(f"**Intent:** {entry['intent']}")
                 st.write(f"**LLM:** {entry['llm']}")
                 st.write(f"**Timestamp:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(entry['timestamp']))}")
+                
+        for _ in range(10):
+            st.sidebar.markdown("")
+        
+        st.sidebar.markdown("""
+            <style>
+            .button-border{
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 5px 10px;
+                background-color: transparent;
+                color: white;
+            }
+            .sidebar-buttons-wrapper{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: auto auto;
+                gap: 10px;
+            }
+            .top {
+                grid-column: span 2;
+                text-align: center;
+            }
 
+            .bottom-left, .bottom-right {
+                text-align: center;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        st.sidebar.markdown("""<div class='sidebar-buttons-wrapper'>
+                <button class='top button-border'>🚪 Sign In</button>
+                <button class='bottom-left button-border'>🔑 Add API</button>
+                <button class='bottom-right button-border'>⚙️ Settings</button>
+            </div>""",
+            unsafe_allow_html=True
+        )
+    
+    def add_api(self):
+        print("Adding API")
+        
+    def settings_page(self):
+        print("Settings Page")
+        
+    def sign_in(self):
+        print("Sign In")
+                
+                
 def parse_intent(intent_text):
     """
     Parse the intent text with the new, more structured format
@@ -334,25 +448,90 @@ def track_performance(start_time, intent, llm):
     return duration
 
 def main():
-    st.title("AiGator - Smart Router")
+    st.markdown("""
+        <style>
+        .button-border{
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 5px 10px;
+            background-color: transparent;
+            color: white;
+        }
+        .header-buttons-wrapper{
+            display: flex;
+            justify-content: space-between;
+        }
+        .flex-with-gap{
+            display: flex;
+            gap: 10px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
+    st.markdown("""<div class='header-buttons-wrapper'>
+            <div class='flex-with-gap'>
+                <button class='button-border'>LLMChat</button>
+                <button class='button-border'>Plugins (0)</button>
+            </div>
+            <div class='flex-with-gap'>
+                <button class='button-border'>Star on Github</button>
+                <button class='button-border'>Feedback</button>
+            </div>
+        </div>""",
+        unsafe_allow_html=True
+    )       
+
+    st.title("AiGator - Smart Router")
+        
     # Initialize chat history
     chat_history = ChatHistory()
     
     # Sidebar chat history
     chat_history.display_history()
     
-    # User input
-    user_query = st.text_input("Enter your query:")
+    # Add some vertical space to push content down
+    for _ in range(10):
+        st.markdown("")
     
-    if st.button("Ask"):
-        if user_query:
+    # Prompt suggestions
+    suggested_prompts = [
+        "Top-rated restaurants in my city",
+        "Recent news in my area",
+        "Summarize this article for me",
+        "How to improve my Python skills",
+        "What are the latest trends in renewable energy?"
+    ]
+    
+    st.subheader("Quick Suggestions")
+    col_prompts = st.columns(len(suggested_prompts))
+    for i, prompt in enumerate(suggested_prompts):
+        with col_prompts[i]:
+            if st.button(prompt, key=f"prompt_{i}"):
+                st.session_state.user_query = prompt
+                
+    if 'submitted_query' not in st.session_state:
+        st.session_state.submitted_query = None
+    
+    # User input
+    # st.markdown("---")
+    user_query = st.text_input(
+        "Enter your query:", 
+        key="user_query",
+        on_change=lambda: setattr(st.session_state, 'submitted_query', st.session_state.user_query)
+    )
+    
+    if st.button("Ask") or st.session_state.submitted_query:
+        query_to_process = st.session_state.submitted_query or user_query
+        
+        if query_to_process:
+            # Reset submitted query to prevent duplicate processing
+            st.session_state.submitted_query = None
             start_time = time.time()
             
             with st.spinner("Detecting intent..."):
                 try:
                     # Detect intent
-                    intent = detect_intent(user_query)
+                    intent = detect_intent(query_to_process)
                     st.success(f"Detected Intent: {intent.capitalize()}")
                     
                     # Select appropriate LLMs
@@ -363,7 +542,7 @@ def main():
                     
                     # Fetch response
                     with st.spinner("Fetching response from LLM..."):
-                        response = fetch_response(user_query, primary_llm, secondary_llm)
+                        response = fetch_response(query_to_process, primary_llm, secondary_llm)
                         
                         st.write("### Response")
                         if response:
@@ -371,7 +550,7 @@ def main():
                             
                             # Add to chat history
                             chat_history.add_entry(
-                                query=user_query, 
+                                query=query_to_process, 
                                 intent=intent, 
                                 llm=primary_llm, 
                                 response=response
