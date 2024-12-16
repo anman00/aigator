@@ -183,8 +183,6 @@ class ChatHistory:
                     border: 1px solid #ccc;
                     border-radius: 5px;
                     padding: 5px 10px;
-                    background-color: transparent;
-                    color: white;
                 }
                 .sidebar-buttons-wrapper{
                     display: grid;
@@ -230,8 +228,6 @@ class ChatHistory:
                 border: 1px solid #ccc;
                 border-radius: 5px;
                 padding: 5px 10px;
-                background-color: transparent;
-                color: white;
             }
             .sidebar-buttons-wrapper{
                 display: grid;
@@ -454,8 +450,6 @@ def main():
             border: 1px solid #ccc;
             border-radius: 5px;
             padding: 5px 10px;
-            background-color: transparent;
-            color: white;
         }
         .header-buttons-wrapper{
             display: flex;
