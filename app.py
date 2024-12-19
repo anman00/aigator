@@ -1,14 +1,129 @@
 import streamlit as st
 import requests
-import json
 import re
 import os
 from functools import lru_cache
 import time
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from dotenv import load_dotenv
 
-OPENROUTER_API_KEY = "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"
+load_dotenv()
+
+MONGO_CONNECTION_URL = os.getenv('MONGO_CONNECTION_URL', '')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', '')
+
+class MongoDBHandler:
+    def __init__(self, connection_string):
+        """
+        Initialize MongoDB connection
+        
+        Args:
+            connection_string (str): MongoDB connection string
+        """
+        try:
+            # Create a new client and connect to the server
+            self.client = MongoClient(connection_string, server_api=ServerApi('1'))
+            
+            # Select the database
+            self.db = self.client['aigator-dev-db']
+            
+            # Create collections
+            self.chat_histories = self.db['chat_histories']
+            self.model_scores = self.db['model_scores']
+            
+            # Verify the connection
+            self.client.admin.command('ping')
+            st.success("Successfully connected to MongoDB!")
+        
+        except Exception as e:
+            st.error(f"Error connecting to MongoDB: {e}")
+            self.client = None
+            self.db = None
+    
+    def insert_chat_history(self, entry):
+        """
+        Insert a chat history entry into MongoDB
+        
+        Args:
+            entry (dict): Chat history entry to insert
+        """
+        if self.chat_histories is not None:
+            try:
+                return self.chat_histories.insert_one(entry)
+            except Exception as e:
+                st.error(f"Error inserting chat history: {e}")
+                return None
+    
+    def insert_model_score(self, score_entry):
+        """
+        Insert a model score entry into MongoDB
+        
+        Args:
+            score_entry (dict): Model score entry to insert
+        """
+        if self.model_scores is not None:
+            try:
+                return self.model_scores.insert_one(score_entry)
+            except Exception as e:
+                st.error(f"Error inserting model score: {e}")
+                return None
+    
+    def get_chat_histories(self, limit=50):
+        """
+        Retrieve recent chat histories
+        
+        Args:
+            limit (int): Number of chat histories to retrieve
+        
+        Returns:
+            list: Recent chat histories
+        """
+        if self.chat_histories is not None:
+            try:
+                return list(self.chat_histories.find().sort('timestamp', -1).limit(limit))
+            except Exception as e:
+                st.error(f"Error retrieving chat histories: {e}")
+                return []
+        return []
+    
+    def insert_intent_scores(self, query, primary_intent, additional_intents):
+        """
+        Insert intent scores for a specific query
+        
+        Args:
+            query (str): Original user query
+            primary_intent: Primary intent data
+            additional_intents: Additional intent data
+        """
+        result = {}
+        i = 0
+        while i < len(additional_intents):
+            if 'accuracy:' in additional_intents[i + 1]:  # Check if this is the start of an intent group
+                intent = additional_intents[i]
+                accuracy = float(additional_intents[i + 2])
+                result[intent] = accuracy
+                i += 4  # Move to the next intent group
+            else:
+                i += 1  # Skip unrelated entries
+        
+        if self.model_scores is not None:
+            try:
+                # Prepare intent scores entry
+                intent_scores_entry = {
+                    'query': query,
+                    'primary_intent': primary_intent,
+                    'additional_intents': result,
+                    'timestamp': time.time()
+                }
+                
+                return self.model_scores.insert_one(intent_scores_entry)
+            except Exception as e:
+                st.error(f"Error inserting intent scores: {e}")
+                return None
 
 # Extended LLM Mappings with more specific intents
 LLM_MAPPING = {
@@ -96,42 +211,92 @@ SECONDARY_LLM_MAPPING = {
 }
 
 class ChatHistory:
-    def __init__(self, max_history=50):
+    def __init__(self, max_history=50, mongodb_handler=None):
         """
         Initialize chat history management
         
         Args:
             max_history (int): Maximum number of chat entries to store
+            mongodb_handler (MongoDBHandler): MongoDB connection handler
         """
-        # Initialize session state for chat history if not exists
-        # if 'chat_history' not in st.session_state:
-        #     st.session_state.chat_history = []
+        self.mongodb_handler = mongodb_handler
         
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = [
-                {
-                    'query': '(Example) What are the top restaurants in New York?',
-                    'intent': 'food',
-                    'llm': 'mistralai/mistral-7b-instruct:free',
-                    'timestamp': time.time() - 3600  # 1 hour ago
-                },
-                {
-                    'query': '(Example) Explain quantum computing basics',
-                    'intent': 'technology',
-                    'llm': 'meta-llama/llama-3.1-405b-instruct:free',
-                    'timestamp': time.time() - 7200  # 2 hours ago
-                },
-                {
-                    'query': '(Example) Best practices for Python programming',
-                    'intent': 'programming',
-                    'llm': 'huggingfaceh4/zephyr-7b-beta:free',
-                    'timestamp': time.time() - 14400  # 4 hours ago
-                }
-            ]
+        # Try to load chat history from MongoDB if possible
+        if self.mongodb_handler:
+            loaded_histories = self.mongodb_handler.get_chat_histories(max_history)
+            
+            if loaded_histories:
+                st.session_state.chat_history = loaded_histories
+            else:
+                st.session_state.chat_history = [
+                    {
+                        'query': '(Example) What are the top restaurants in New York?',
+                        'intent': 'food',
+                        'llm': 'mistralai/mistral-7b-instruct:free',
+                        'timestamp': time.time() - 3600  # 1 hour ago
+                    },
+                    {
+                        'query': '(Example) Explain quantum computing basics',
+                        'intent': 'technology',
+                        'llm': 'meta-llama/llama-3.1-405b-instruct:free',
+                        'timestamp': time.time() - 7200  # 2 hours ago
+                    },
+                    {
+                        'query': '(Example) Best practices for Python programming',
+                        'intent': 'programming',
+                        'llm': 'huggingfaceh4/zephyr-7b-beta:free',
+                        'timestamp': time.time() - 14400  # 4 hours ago
+                    }
+                ]
+        else:
+            if 'chat_history' not in st.session_state:
+                st.session_state.chat_history = [
+                    {
+                        'query': '(Example) What are the top restaurants in New York?',
+                        'intent': 'food',
+                        'llm': 'mistralai/mistral-7b-instruct:free',
+                        'timestamp': time.time() - 3600  # 1 hour ago
+                    },
+                    {
+                        'query': '(Example) Explain quantum computing basics',
+                        'intent': 'technology',
+                        'llm': 'meta-llama/llama-3.1-405b-instruct:free',
+                        'timestamp': time.time() - 7200  # 2 hours ago
+                    },
+                    {
+                        'query': '(Example) Best practices for Python programming',
+                        'intent': 'programming',
+                        'llm': 'huggingfaceh4/zephyr-7b-beta:free',
+                        'timestamp': time.time() - 14400  # 4 hours ago
+                    }
+                ]
         
         self.max_history = max_history
+    
+    # def add_entry(self, query, intent, llm, response):
+    #     """
+    #     Add a new entry to chat history
         
-        self.max_history = max_history
+    #     Args:
+    #         query (str): User's input query
+    #         intent (str): Detected intent
+    #         llm (str): LLM used
+    #         response (str): LLM's response
+    #     """
+    #     # Create entry dictionary
+    #     entry = {
+    #         'query': query,
+    #         'intent': intent,
+    #         'llm': llm,
+    #         'timestamp': time.time()
+    #     }
+        
+    #     # Add to the beginning of the list
+    #     st.session_state.chat_history.insert(0, entry)
+        
+    #     # Trim history if exceeds max
+    #     if len(st.session_state.chat_history) > self.max_history:
+    #         st.session_state.chat_history = st.session_state.chat_history[:self.max_history]
     
     def add_entry(self, query, intent, llm, response):
         """
@@ -148,8 +313,13 @@ class ChatHistory:
             'query': query,
             'intent': intent,
             'llm': llm,
+            'response': response,
             'timestamp': time.time()
         }
+        
+        # Add to MongoDB if handler exists
+        if self.mongodb_handler:
+            self.mongodb_handler.insert_chat_history(entry)
         
         # Add to the beginning of the list
         st.session_state.chat_history.insert(0, entry)
@@ -262,8 +432,35 @@ class ChatHistory:
         
     def sign_in(self):
         print("Sign In")
-                
-                
+
+def track_performance(start_time, intent, llm, mongodb_handler=None):
+    """
+    Track and log query processing performance and optionally save to MongoDB
+    
+    Args:
+        start_time (float): Start time of query processing
+        intent (str): Detected intent
+        llm (str): LLM used
+        mongodb_handler (MongoDBHandler, optional): MongoDB connection handler
+    
+    Returns:
+        float: Processing duration
+    """
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    # Optional: Save performance metrics to MongoDB
+    if mongodb_handler:
+        score_entry = {
+            'intent': intent,
+            'llm': llm,
+            'processing_time': duration,
+            'timestamp': end_time
+        }
+        mongodb_handler.insert_model_score(score_entry)
+    
+    return duration
+
 def parse_intent(intent_text):
     """
     Parse the intent text with the new, more structured format
@@ -327,8 +524,10 @@ def detect_intent(query):
                     geography, art, music, sports, fitness, food, childcare, language, business, 
                     marketing, job, diy, dating, psychology, law, environment, astronomy, fashion, 
                     gaming, mythology, religion, pets). 
-
-                    Format your response as: 
+                    
+                    and two more intents that are relevant to the query.
+                    
+                    Sort them in descending order of confidence, with the primary intent first, do not mention any reasoning or anything more, just format your response as:
                     intent: [chosen intent from list]
                     accuracy: [confidence score between 0-1]
 
@@ -368,7 +567,7 @@ def detect_intent(query):
         if final_intent not in LLM_MAPPING:
             final_intent = "general knowledge"
         
-        return final_intent
+        return final_intent, other_intents
     
     except Exception as e:
         return "general knowledge"
@@ -436,14 +635,41 @@ def fetch_response(query, llm_name, secondary_llm=None):
             return fetch_response(query, secondary_llm)
         return None
 
-def track_performance(start_time, intent, llm):
-    """Track and log query processing performance."""
-    end_time = time.time()
-    duration = end_time - start_time
-    
-    return duration
+def initialize_session_state():
+    """Initialize default session state variables"""
+    if 'chat_initialized' not in st.session_state:
+        st.session_state.chat_initialized = True
+        st.session_state.user_query = ""
+        st.session_state.submitted_query = None
+        st.session_state.last_response = None
+        st.session_state.detected_intent = None
+        st.session_state.processing_time = None
+        st.session_state.show_response = False
+
+def clear_chat_callback():
+    """Callback function to clear chat state without page rerun"""
+    st.session_state.user_query = ""
+    st.session_state.submitted_query = None
+    st.session_state.last_response = None
+    st.session_state.detected_intent = None
+    st.session_state.processing_time = None
+    st.session_state.show_response = False
+
+def handle_user_input():
+    """Callback function to handle user input"""
+    if st.session_state.user_query:
+        st.session_state.submitted_query = st.session_state.user_query
+        st.session_state.show_response = True
 
 def main():
+    initialize_session_state()
+    
+    try:
+        mongodb_handler = MongoDBHandler(MONGO_CONNECTION_URL)
+    except Exception as e:
+        st.error(f"MongoDB Connection Error: {e}")
+        mongodb_handler = None
+        
     st.markdown("""
         <style>
         .button-border{
@@ -478,10 +704,14 @@ def main():
     st.title("AiGator - Smart Router")
         
     # Initialize chat history
-    chat_history = ChatHistory()
+    chat_history = ChatHistory(mongodb_handler=mongodb_handler)
     
     # Sidebar chat history
     chat_history.display_history()
+    
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        st.button("➕ New Chat", on_click=clear_chat_callback)
     
     # Add some vertical space to push content down
     for _ in range(10):
@@ -511,7 +741,8 @@ def main():
     user_query = st.text_input(
         "Enter your query:", 
         key="user_query",
-        on_change=lambda: setattr(st.session_state, 'submitted_query', st.session_state.user_query)
+        # on_change=lambda: setattr(st.session_state, 'submitted_query', st.session_state.user_query)
+        on_change=handle_user_input
     )
     
     if st.button("Ask") or st.session_state.submitted_query:
@@ -525,7 +756,12 @@ def main():
             with st.spinner("Detecting intent..."):
                 try:
                     # Detect intent
-                    intent = detect_intent(query_to_process)
+                    intent, intents_data = detect_intent(query_to_process)
+                    
+                    # Store intent scores in MongoDB if handler exists
+                    if mongodb_handler:
+                        mongodb_handler.insert_intent_scores(query_to_process, intent, intents_data)
+                    
                     st.success(f"Detected Intent: {intent.capitalize()}")
                     
                     # Select appropriate LLMs
@@ -553,10 +789,9 @@ def main():
                             st.error("Unable to fetch response. Try again later.")
                         
                         # Track performance
-                        processing_time = track_performance(start_time, intent, primary_llm)
-                        st.info(f"Query processed in {processing_time:.2f} seconds")
+                        # processing_time = track_performance(start_time, intent, primary_llm, mongodb_handler)
+                        # st.info(f"Query processed in {processing_time:.2f} seconds")
                     
-
                 except Exception as e:
                     st.error(f"Unexpected Error: {e}")
         else:
